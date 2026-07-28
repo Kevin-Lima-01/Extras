@@ -1,6 +1,6 @@
 # Macroeconomic Data Analysis Toolkit
 
-This repository contains a collection of standalone **R scripts** developed during my coursework and independent research. These tools perform automated data retrieval, time-series decomposition, and empirical visualization of U.S. macroeconomic relationships.
+This repository contains a collection of standalone R and Python scripts developed during my coursework and independent research. These tools perform automated data retrieval, time-series decomposition, and empirical visualization of U.S. and Brazilian macroeconomic relationships.
 
 ## Contents
 
@@ -20,14 +20,29 @@ This script accesses **U.S. macroeconomic data** directly from the **Federal Res
 
 **Variables Analyzed:**
 
-| Variable | Source | Transformation |
-|----------|--------|----------------|
-| GDP | FRED | Levels, growth rates, cyclical component |
-| M2 Money Supply | FRED | Levels, growth rates, cyclical component |
-| Inflation | FRED | Derived from price indices |
-| Unemployment | FRED | Rate, cyclical deviations |
-| Interest Rates | FRED | Policy and market rates |
+| Variable        | Source | Transformation                       |
+|------------------|--------|---------------------------------------|
+| GDP              | FRED   | Levels, growth rates, cyclical component |
+| M2 Money Supply  | FRED   | Levels, growth rates, cyclical component |
+| Inflation        | FRED   | Derived from price indices           |
+| Unemployment     | FRED   | Rate, cyclical deviations            |
+| Interest Rates   | FRED   | Policy and market rates               |
 
 ---
 
-*These scripts are part of my portfolio, demonstrating applied skills in macroeconomic data analysis, API-based data retrieval, time-series filtering, and empirical visualization in R.*
+### Selic vs. Fed Funds & Industrial Production Comparative Analysis (Python)
+
+A Jupyter notebook comparing Brazilian and U.S. monetary policy rates and industrial production, combining data from **BCB/SGS**, **FRED**, and **IBGE/SIDRA** into a single comparative framework.
+
+**Key Features:**
+
+- 🔹 **Multi-Source Data Retrieval:** Pulls the Selic rate via `bcb.sgs`, the Fed Funds rate via `fredapi`, and Brazilian industrial production via `sidrapy`, alongside U.S. industrial production (INDPRO, seasonally adjusted and non-adjusted) from FRED.
+- 🔹 **Descriptive & Distributional Analysis:** Computes descriptive statistics, boxplots, and kernel density estimates (KDE) comparing the distribution of Selic vs. Fed Funds rates.
+- 🔹 **Correlation Analysis:** Estimates Pearson correlation between series, including decade-by-decade breakdowns (2000s, 2010s, 2020s).
+- 🔹 **Spread Analysis:** Calculates and characterizes the Selic–Fed Funds spread (mean, median, and dispersion).
+- 🔹 **Comparative Industrial Production:** Visualizes and compares industrial output trajectories for Brazil and the U.S.
+
+**Variables Analyzed:**
+
+| Variable                        | Source        | Notes                                  |
+|----------------------
