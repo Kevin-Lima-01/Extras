@@ -45,4 +45,35 @@ A Jupyter notebook comparing Brazilian and U.S. monetary policy rates and indust
 **Variables Analyzed:**
 
 | Variable                        | Source        | Notes                                  |
-|----------------------
+|----------------------------------|---------------|------------------------------------------|
+| Selic Rate (Brazil)              | BCB/SGS       | Series 432, spliced across 2000–present |
+| Fed Funds Rate (US)               | FRED          | FEDFUNDS                                |
+| Industrial Production (US)        | FRED          | INDPRO (SA) and IPB50001N (NSA)          |
+| Industrial Production (Brazil)    | IBGE/SIDRA    | Table 8159                              |
+
+---
+
+### PIM-PF Automated Reporting Pipeline (R / R Markdown)
+
+An automated pipeline that generates a monthly HTML "Nota Informativa" on Brazil's **Pesquisa Industrial Mensal – Produção Física (PIM-PF)**, sourced live from **IBGE/SIDRA**.
+
+**Key Features:**
+
+- 🔹 **Automated Data Retrieval:** Pulls both the original and seasonally-adjusted PIM-PF series (Indústria Geral) directly from SIDRA via `sidrar::get_sidra()`.
+- 🔹 **Robust Rendering Script:** `render_pim.R` runs pre-flight checks (file existence, required packages, SIDRA API connectivity) before knitting, with structured logging (timestamped, INFO/WARN/ERROR levels) written to `render_log.txt`.
+- 🔹 **Derived Indicators:** Computes month-over-month and year-over-year variations, deviation from historical mean, 3-month and 12-month moving averages, and seasonally-adjusted trends over configurable rolling windows.
+- 🔹 **Polished HTML Report:** Tabbed sections (historical series, recent variations, trend/smoothing, seasonally-adjusted series, variation panel, summary table) styled with a custom color palette and theme, built with `flatly` Bootstrap theme and floating table of contents.
+- 🔹 **Versioned Output:** Automatically saves a dated copy (`PIM_PF_YYYYMM.html`) and a `PIM_PF_LATEST.html` on every successful knit.
+
+**Variables Analyzed:**
+
+| Variable                          | Source      | Transformation                                    |
+|-------------------------------------|-------------|----------------------------------------------------|
+| PIM-PF Original Series               | IBGE/SIDRA  | Levels, M/M and Y/Y variation                       |
+| PIM-PF Seasonally Adjusted Series     | IBGE/SIDRA  | Levels, trend, moving averages (3M/12M)             |
+
+*Authors: Kevin Lima, Leonardo Ono, Lucca Costa.*
+
+---
+
+*These scripts are part of my portfolio, demonstrating applied skills in macroeconomic data analysis, API-based data retrieval, time-series filtering, automated reporting pipelines, and empirical visualization in R and Python.*
