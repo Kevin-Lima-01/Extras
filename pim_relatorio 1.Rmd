@@ -1,0 +1,512 @@
+---
+title: |
+  ![](https://www.ibge.gov.br/favicon.ico){width=20px}
+  Nota Informativa — Pesquisa Industrial Mensal
+subtitle: "Produção Física da Indústria (PIM-PF) | IBGE"
+date: "`r format(Sys.Date(), '%d de %B de %Y')`"
+author: "Kevin Lima, Leonardo Ono, Lucca Costa*"
+output:
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    toc_depth: 2
+    number_sections: false
+    df_print: kable
+    self_contained: true
+params:
+  codigo_atividade: 129314   # Indústria Geral
+  n_meses_var:       24      # janela variação m/m
+  n_meses_aa:        36      # janela variação a/a
+  n_meses_dessaz:    60      # janela dessazonalização
+  n_meses_mm3:       48      # janela MM3
+---
+
+```{r setup, include=FALSE}
+# ── Opções globais ─────────────────────────────────────────────
+knitr::opts_chunk$set(
+  echo    = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width  = 10,
+  fig.height = 5,
+  dpi        = 150,
+  out.width  = "100%"
+)
+
+# ── Salva cópia datada em relatorios/ ao fazer Knit ────────────
+knitr::knit_hooks$set(document = function(x) {
+  on.exit({
+    input_path <- knitr::current_input(dir = TRUE)
+    html_orig  <- sub("\\.Rmd$", ".html", input_path, ignore.case = TRUE)
+    output_dir <- file.path(dirname(input_path), "relatorios")
+    dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+    nome   <- sprintf("PIM_PF_%s.html", format(Sys.Date(), "%Y%m"))
+    latest <- file.path(output_dir, "PIM_PF_LATEST.html")
+    dated  <- file.path(output_dir, nome)
+    if (file.exists(html_orig)) {
+      file.copy(html_orig, dated,   overwrite = TRUE)
+      file.copy(html_orig, latest,  overwrite = TRUE)
+      message("\nRelatório copiado para: ", dated)
+    }
+  }, add = TRUE)
+  x
+})
+```
+
+```{r pacotes}
+# ── Pacotes ────────────────────────────────────────────────────
+pkgs <- c("sidrar", "tidyverse", "lubridate", "zoo", "scales", "kableExtra")
+invisible(lapply(pkgs, function(p) {
+  if (!requireNamespace(p, quietly = TRUE)) install.packages(p)
+  library(p, character.only = TRUE)
+}))
+```
+
+```{r paleta-tema}
+# ── Paleta e tema ──────────────────────────────────────────────
+azul       <- "#1B3A5C"
+azul_claro <- "#2E86AB"
+vermelho   <- "#E84855"
+cinza      <- "#6C757D"
+verde      <- "#2CA58D"
+amarelo    <- "#F4A261"
+
+tema <- theme_minimal(base_size = 12) +
+  theme(
+    plot.title       = element_text(face = "bold", size = 13, color = azul),
+    plot.subtitle    = element_text(size = 10, color = cinza),
+    plot.caption     = element_text(size = 7.5, color = cinza, hjust = 1),
+    axis.title       = element_text(size = 9,  color = cinza),
+    axis.text        = element_text(size = 8.5, color = azul),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "#E9ECEF", linewidth = 0.4),
+    legend.position  = "bottom",
+    legend.title     = element_blank(),
+    legend.text      = element_text(size = 9),
+    plot.background  = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    strip.text       = element_text(face = "bold", color = azul, size = 10)
+  )
+theme_set(tema)
+```
+
+```{r importacao, cache=TRUE}
+# ── Série original (var 12606) ─────────────────────────────────
+pim_raw <- get_sidra(
+  x        = 8888,
+  variable = 12606,
+  period   = "all",
+  geo      = "Brazil",
+  category = "all"
+)
+
+pim <- pim_raw %>%
+  filter(`Seções e atividades industriais (CNAE 2.0) (Código)` == params$codigo_atividade) %>%
+  mutate(Data = ym(`Mês (Código)`)) %>%
+  select(Data, Valor) %>%
+  arrange(Data)
+
+# ── Série dessazonalizada (var 12607) ──────────────────────────
+dessaz_raw <- get_sidra(
+  x        = 8888,
+  variable = 12607,
+  period   = "all",
+  geo      = "Brazil",
+  category = "all"
+)
+
+pim_dessaz_oficial <- dessaz_raw %>%
+  filter(`Seções e atividades industriais (CNAE 2.0) (Código)` == params$codigo_atividade) %>%
+  mutate(Data = ym(`Mês (Código)`)) %>%
+  select(Data, Valor_dessaz = Valor)
+```
+
+```{r derivacoes}
+# ── Derivações ─────────────────────────────────────────────────
+pim <- pim %>%
+  mutate(
+    var_mensal     = (Valor / lag(Valor) - 1) * 100,
+    var_interanual = (Valor / lag(Valor, 12) - 1) * 100,
+    mes            = month(Data),
+    media_mes      = ave(Valor, mes, FUN = function(x) mean(x, na.rm = TRUE)),
+    mm3            = rollmean(Valor, k = 3,  fill = NA, align = "right"),
+    acum12         = rollmean(Valor, k = 12, fill = NA, align = "right"),
+    var_acum12     = rollapply(replace_na(var_mensal, 0),
+                               width = 12, FUN = sum,
+                               fill = NA, align = "right")
+  )
+
+# ── Referências rápidas ────────────────────────────────────────
+ultimo    <- tail(pim, 1)
+penultimo <- pim %>% slice(n() - 1)
+
+ref_data    <- format(ultimo$Data, "%B de %Y")
+ref_data_ab <- format(ultimo$Data, "%b/%Y")
+```
+
+---
+
+```{r kpi-resumo, results='asis'}
+# ── Linha de indicadores principais ────────────────────────────
+sinal <- function(x) ifelse(x >= 0, "▲", "▼")
+
+cat(sprintf(
+  "| Indicador | Valor |\n|---|---|\n| **Índice atual** (base 2022=100) | **%.2f** |\n| **Variação M/M** | %s **%+.2f%%** |\n| **Variação A/A** | %s **%+.2f%%** |\n| **Média Móvel 3M** | **%.2f** |",
+  ultimo$Valor,
+  sinal(ultimo$var_mensal),   ultimo$var_mensal,
+  sinal(ultimo$var_interanual), ultimo$var_interanual,
+  ultimo$mm3
+))
+```
+
+> **Referência:** `r ref_data` &nbsp;|&nbsp; Fonte: IBGE — PIM-PF, Tabela 8888 &nbsp;|&nbsp; Compilado automaticamente em `r format(Sys.time(), "%d/%m/%Y %H:%M")`.
+
+---
+
+## 1. Série Histórica Completa {.tabset}
+
+A série histórica da produção física industrial (base fixa, média 2022 = 100) permite identificar tendências de longo prazo, choques e ciclos de expansão/retração.
+
+```{r p1-historico}
+ggplot(pim, aes(x = Data, y = Valor)) +
+  geom_line(color = azul, linewidth = 0.85) +
+  geom_hline(yintercept = 100, linetype = "dashed", color = cinza, linewidth = 0.5) +
+  annotate("text", x = as.Date("2003-01-01"), y = 101.5,
+           label = "Base 100 (média 2022)", size = 2.8, color = cinza, hjust = 0) +
+  # Destaque COVID
+  annotate("rect",
+           xmin = as.Date("2020-03-01"), xmax = as.Date("2020-09-01"),
+           ymin = -Inf, ymax = Inf,
+           alpha = 0.08, fill = vermelho) +
+  annotate("text", x = as.Date("2020-06-01"), y = max(pim$Valor, na.rm=TRUE) * 0.97,
+           label = "COVID-19", size = 2.8, color = vermelho, fontface = "italic") +
+  geom_point(data = ultimo, aes(x = Data, y = Valor),
+             color = vermelho, size = 3) +
+  geom_text(data = ultimo, aes(label = sprintf("%.1f", Valor)),
+            vjust = -1, size = 3.2, color = vermelho, fontface = "bold") +
+  scale_x_date(date_breaks = "2 years", date_labels = "%Y",
+               expand = expansion(mult = 0.02)) +
+  scale_y_continuous(labels = number_format(decimal.mark = ",", big.mark = ".")) +
+  labs(
+    title   = "Produção Física da Indústria — Série Histórica Completa",
+    subtitle = "Índice de base fixa (média 2022 = 100) | Indústria Geral",
+    x = NULL, y = "Índice",
+    caption = sprintf("Fonte: IBGE — PIM-PF (Tabela 8888). Referência: %s.", ref_data_ab)
+  )
+```
+
+---
+
+## 2. Variações Recentes {.tabset}
+
+### M/M — Mensal
+
+```{r p4-mm}
+pim_var <- pim %>%
+  filter(!is.na(var_mensal)) %>%
+  tail(params$n_meses_var) %>%
+  mutate(cor = ifelse(var_mensal >= 0, "Positivo", "Negativo"))
+
+ggplot(pim_var, aes(x = Data, y = var_mensal, fill = cor)) +
+  geom_col(width = 25) +
+  geom_hline(yintercept = 0, color = cinza, linewidth = 0.5) +
+  geom_text(
+    aes(label = sprintf("%+.1f%%", var_mensal),
+        vjust = ifelse(var_mensal >= 0, -0.4, 1.3)),
+    size = 2.6, fontface = "bold",
+    color = ifelse(pim_var$var_mensal >= 0, verde, vermelho)
+  ) +
+  scale_fill_manual(values = c("Positivo" = verde, "Negativo" = vermelho), guide = "none") +
+  scale_x_date(date_breaks = "2 months", date_labels = "%b/%y",
+               expand = expansion(mult = 0.02)) +
+  scale_y_continuous(labels = function(x) paste0(x, "%")) +
+  labs(
+    title   = "Variação Mensal da Produção Industrial (M/M)",
+    subtitle = sprintf("Variação %% em relação ao mês anterior | últimos %d meses", params$n_meses_var),
+    x = NULL, y = "Variação (%)",
+    caption = "Fonte: IBGE — PIM-PF (Tabela 8888)."
+  )
+```
+
+### A/A — Interanual
+
+```{r p5-aa}
+pim_aa <- pim %>%
+  filter(!is.na(var_interanual)) %>%
+  tail(params$n_meses_aa) %>%
+  mutate(cor = ifelse(var_interanual >= 0, "Expansão (A/A)", "Contração (A/A)"))
+
+ggplot(pim_aa, aes(x = Data, y = var_interanual, fill = cor)) +
+  geom_col(width = 25, alpha = 0.85) +
+  geom_hline(yintercept = 0, color = cinza, linewidth = 0.5) +
+  geom_text(
+    data = tail(pim_aa, 1),
+    aes(label = sprintf("%+.1f%%", var_interanual),
+        vjust = ifelse(var_interanual >= 0, -0.5, 1.4)),
+    size = 3.2, fontface = "bold", color = azul, inherit.aes = FALSE,
+    x = tail(pim_aa, 1)$Data, y = tail(pim_aa, 1)$var_interanual
+  ) +
+  scale_fill_manual(
+    values = c("Expansão (A/A)" = verde, "Contração (A/A)" = vermelho),
+    guide  = guide_legend(title = NULL)
+  ) +
+  scale_x_date(date_breaks = "6 months", date_labels = "%b/%y",
+               expand = expansion(mult = 0.02)) +
+  scale_y_continuous(labels = function(x) paste0(x, "%")) +
+  labs(
+    title   = "Variação Interanual da Produção Industrial (A/A)",
+    subtitle = sprintf("Variação %% vs. mesmo mês do ano anterior | últimos %d meses", params$n_meses_aa),
+    x = NULL, y = "Variação (%)",
+    caption = "Fonte: IBGE — PIM-PF (Tabela 8888)."
+  )
+```
+
+### Comparativo Anual
+
+```{r p3-comp-anual}
+anos_comp <- pim %>%
+  filter(year(Data) %in% c(year(ultimo$Data), year(ultimo$Data) - 1)) %>%
+  mutate(
+    ano       = as.factor(year(Data)),
+    mes_label = factor(
+      format(Data, "%b"),
+      levels = format(seq(as.Date("2000-01-01"), by = "month", length.out = 12), "%b")
+    )
+  )
+
+ggplot(anos_comp, aes(x = mes_label, y = Valor, color = ano, group = ano)) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2.5) +
+  scale_color_manual(values = setNames(
+    c(cinza, azul),
+    c(as.character(year(ultimo$Data) - 1), as.character(year(ultimo$Data)))
+  )) +
+  scale_y_continuous(labels = number_format(decimal.mark = ",")) +
+  labs(
+    title   = sprintf("Produção Industrial: %d vs. %d", year(ultimo$Data), year(ultimo$Data) - 1),
+    subtitle = "Comparativo mês a mês — mesmo período dos dois últimos anos",
+    x = NULL, y = "Índice",
+    caption = "Fonte: IBGE — PIM-PF (Tabela 8888)."
+  )
+```
+
+---
+
+## 3. Desvio da Média Histórica
+
+O gráfico abaixo mostra o quanto a produção de cada mês se afasta da **média histórica daquele mesmo mês** (sazonalidade implícita), revelando se a indústria está operando acima ou abaixo do padrão histórico.
+
+```{r p2-desvio}
+pim_36 <- tail(pim, 36) %>%
+  mutate(
+    desvio     = Valor - media_mes,
+    cor_desvio = ifelse(desvio >= 0, "Acima da média", "Abaixo da média"),
+    rotulo     = ifelse(Data == max(Data), sprintf("%+.1f", desvio), NA_character_)
+  )
+
+ggplot(pim_36, aes(x = Data, y = desvio, fill = cor_desvio)) +
+  geom_col(width = 25, alpha = 0.85) +
+  geom_hline(yintercept = 0, color = cinza, linewidth = 0.6) +
+  geom_text(
+    aes(label = rotulo, vjust = ifelse(desvio >= 0, -0.5, 1.4)),
+    size = 3.2, fontface = "bold", na.rm = TRUE, color = azul
+  ) +
+  scale_fill_manual(
+    values = c("Acima da média" = verde, "Abaixo da média" = vermelho),
+    guide  = guide_legend(title = NULL)
+  ) +
+  scale_x_date(date_breaks = "6 months", date_labels = "%b/%y",
+               expand = expansion(mult = 0.02)) +
+  scale_y_continuous(labels = number_format(decimal.mark = ",", suffix = " pts")) +
+  labs(
+    title   = "Desvio da Produção em Relação à Média Histórica do Mês",
+    subtitle = "Diferença (pts do índice) entre valor observado e média histórica daquele mês | últimos 36 meses",
+    x = NULL, y = "Desvio (pontos do índice)",
+    caption = "Fonte: IBGE — PIM-PF (Tabela 8888)."
+  )
+```
+
+---
+
+## 4. Tendência e Suavização {.tabset}
+
+### Média Móvel 3M
+
+```{r p7-mm3}
+ggplot(pim %>% filter(!is.na(mm3)) %>% tail(params$n_meses_mm3), aes(x = Data)) +
+  geom_line(aes(y = Valor, color = "Série original"), linewidth = 0.7, alpha = 0.55) +
+  geom_line(aes(y = mm3,   color = "Média Móvel 3M"),  linewidth = 1.2) +
+  scale_color_manual(values = c("Série original" = cinza, "Média Móvel 3M" = azul)) +
+  scale_x_date(date_breaks = "6 months", date_labels = "%b/%y",
+               expand = expansion(mult = 0.02)) +
+  scale_y_continuous(labels = number_format(decimal.mark = ",")) +
+  labs(
+    title   = "Produção Industrial — Média Móvel de 3 Meses",
+    subtitle = sprintf("Série original vs. MM3 | últimos %d meses", params$n_meses_mm3),
+    x = NULL, y = "Índice",
+    caption = "Fonte: IBGE — PIM-PF (Tabela 8888)."
+  )
+```
+
+### Média Móvel 12M (Acumulado)
+
+```{r p6-mm12}
+pim_acum <- pim %>% filter(!is.na(acum12))
+
+ggplot(pim_acum, aes(x = Data, y = acum12)) +
+  geom_line(color = azul_claro, linewidth = 1.1) +
+  geom_hline(yintercept = 100, linetype = "dashed", color = cinza, linewidth = 0.5) +
+  annotate("text", x = min(pim_acum$Data), y = 100.8,
+           label = "Base 2022 = 100", size = 2.8, color = cinza, hjust = 0) +
+  geom_point(data = tail(pim_acum, 1), aes(x = Data, y = acum12),
+             color = vermelho, size = 3) +
+  geom_text(data = tail(pim_acum, 1), aes(label = sprintf("%.1f", acum12)),
+            vjust = -1, size = 3.2, color = vermelho, fontface = "bold") +
+  scale_x_date(date_breaks = "2 years", date_labels = "%Y",
+               expand = expansion(mult = 0.02)) +
+  scale_y_continuous(labels = number_format(decimal.mark = ",")) +
+  labs(
+    title   = "Produção Industrial — Média Móvel 12 Meses",
+    subtitle = "Média dos últimos 12 meses — suaviza sazonalidade e ruído de curto prazo",
+    x = NULL, y = "Índice (MM12)",
+    caption = "Fonte: IBGE — PIM-PF (Tabela 8888)."
+  )
+```
+
+---
+
+## 5. Série Dessazonalizada
+
+Comparação entre a série bruta e a **série com ajuste sazonal oficial do IBGE** (variável 12607), que remove efeitos de calendário e sazonalidade, facilitando a leitura da tendência subjacente.
+
+```{r p8-dessaz}
+pim_comp <- pim %>%
+  select(Data, Valor) %>%
+  inner_join(pim_dessaz_oficial, by = "Data") %>%
+  tail(params$n_meses_dessaz)
+
+ggplot(pim_comp, aes(x = Data)) +
+  geom_line(aes(y = Valor,       color = "Série Original"),      linewidth = 0.75, alpha = 0.5) +
+  geom_line(aes(y = Valor_dessaz, color = "Dessazonalizada (IBGE)"), linewidth = 1.2) +
+  geom_point(data = tail(pim_comp, 1),
+             aes(x = Data, y = Valor_dessaz), color = azul_claro, size = 3, inherit.aes = FALSE) +
+  geom_text(data = tail(pim_comp, 1),
+            aes(x = Data, y = Valor_dessaz, label = sprintf("%.1f", Valor_dessaz)),
+            vjust = -1, size = 3.2, color = azul_claro, fontface = "bold", inherit.aes = FALSE) +
+  geom_point(data = tail(pim_comp, 1),
+             aes(x = Data, y = Valor), color = vermelho, size = 3, inherit.aes = FALSE) +
+  geom_text(data = tail(pim_comp, 1),
+            aes(x = Data, y = Valor, label = sprintf("%.1f", Valor)),
+            vjust = 1.8, size = 3.2, color = vermelho, fontface = "bold", inherit.aes = FALSE) +
+  scale_color_manual(
+    values = c("Série Original" = cinza, "Dessazonalizada (IBGE)" = azul_claro),
+    guide  = guide_legend(title = NULL)
+  ) +
+  scale_x_date(date_breaks = "6 months", date_labels = "%b/%y",
+               expand = expansion(mult = 0.02)) +
+  scale_y_continuous(labels = number_format(decimal.mark = ",", big.mark = ".")) +
+  labs(
+    title   = "Produção Industrial — Original vs. Dessazonalizada",
+    subtitle = sprintf("Ajuste sazonal oficial IBGE (var. 12607) | últimos %d meses", params$n_meses_dessaz),
+    x = NULL, y = "Índice",
+    caption = "Fonte: IBGE — PIM-PF (Tabela 8888). Vars: 12606 (original) e 12607 (dessazonalizada)."
+  )
+```
+
+---
+
+## 6. Painel de Variações
+
+Visão consolidada das três métricas de variação — mensal, interanual e acumulado em 12 meses — para os últimos 24 meses.
+
+```{r p9-painel, fig.height=9}
+pim_resumo <- pim %>%
+  filter(!is.na(var_mensal), !is.na(var_interanual)) %>%
+  mutate(
+    var_acum12 = rollapply(var_mensal, width = 12, FUN = sum, fill = NA, align = "right")
+  ) %>%
+  filter(!is.na(var_acum12)) %>%
+  tail(24)
+
+df_painel <- bind_rows(
+  pim_resumo %>% select(Data, valor = var_mensal)     %>% mutate(metrica = "Variação Mensal (M/M)"),
+  pim_resumo %>% select(Data, valor = var_interanual) %>% mutate(metrica = "Variação Interanual (A/A)"),
+  pim_resumo %>% select(Data, valor = var_acum12)     %>% mutate(metrica = "Acumulado 12 Meses")
+) %>%
+  filter(!is.na(valor)) %>%
+  mutate(
+    metrica = factor(metrica, levels = c(
+      "Variação Mensal (M/M)", "Variação Interanual (A/A)", "Acumulado 12 Meses"
+    )),
+    cor = ifelse(valor >= 0, "pos", "neg")
+  )
+
+ggplot(df_painel, aes(x = Data, y = valor, fill = cor)) +
+  geom_col(width = 25, alpha = 0.85) +
+  geom_hline(yintercept = 0, color = cinza, linewidth = 0.4, linetype = "dashed") +
+  facet_wrap(~metrica, scales = "free_y", ncol = 1) +
+  scale_fill_manual(values = c("pos" = verde, "neg" = vermelho), guide = "none") +
+  scale_x_date(date_breaks = "3 months", date_labels = "%b/%y",
+               expand = expansion(mult = 0.02)) +
+  scale_y_continuous(labels = function(x) paste0(x, "%")) +
+  labs(
+    title   = "Painel de Variações da Produção Industrial",
+    subtitle = "Mensal, interanual e acumulado em 12 meses | últimos 24 meses",
+    x = NULL, y = NULL,
+    caption = "Fonte: IBGE — PIM-PF (Tabela 8888)."
+  )
+```
+
+---
+
+## 7. Tabela-Resumo
+
+```{r tabela-resumo}
+# Últimos 12 meses formatados
+tab <- pim %>%
+  filter(!is.na(var_mensal), !is.na(var_interanual)) %>%
+  tail(12) %>%
+  mutate(
+    Mês          = format(Data, "%b/%Y"),
+    Índice       = round(Valor, 2),
+    `Var. M/M`   = sprintf("%+.2f%%", var_mensal),
+    `Var. A/A`   = sprintf("%+.2f%%", var_interanual),
+    `MM3`        = round(mm3, 2)
+  ) %>%
+  select(Mês, Índice, `Var. M/M`, `Var. A/A`, MM3) %>%
+  arrange(desc(row_number()))
+
+tab %>%
+  kable(
+    align   = c("l", "r", "r", "r", "r"),
+    caption = sprintf("PIM-PF — Indústria Geral | Referência: %s", ref_data_ab)
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width        = TRUE,
+    font_size         = 13
+  ) %>%
+  row_spec(1, bold = TRUE, color = "white", background = azul) %>%
+  column_spec(1, bold = TRUE)
+```
+
+---
+
+## Notas Metodológicas
+
+- **Índice de base fixa:** média do ano de 2022 = 100.
+- **Variável 12606:** índice de produção física sem ajuste sazonal.
+- **Variável 12607:** índice de produção física com ajuste sazonal oficial do IBGE.
+- **MM3 / MM12:** médias móveis de 3 e 12 meses, calculadas pela direita.
+- **Acumulado 12M:** soma das variações mensais dos últimos 12 meses.
+- A divulgação da PIM-PF ocorre mensalmente às **9h** no [SIDRA-IBGE](https://sidra.ibge.gov.br/home/pimpfbr/brasil).
+
+---
+
+---
+
+*Nota Informativa gerada automaticamente via `rmarkdown::render()` | Dados: IBGE — PIM-PF, Tabela 8888 | Compilação: `r format(Sys.time(), "%d/%m/%Y às %H:%M")` | Atividade 5 — Kevin Lima, Leonardo Ono, Lucca Costa*
